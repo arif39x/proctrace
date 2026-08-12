@@ -1,0 +1,179 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import threading
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from proctrace._proctrace_core import (
+    BackgroundSampler,
+    ResourceSnapshot,
+    list_open_fds,
+    snapshot_resources,
+)
+from proctrace._types import ResourceDelta
+
+if TYPE_CHECKING:
+    from types import TracebackType
+    from typing import Self
+
+
+def _count_children() -> int:         # child process counting
+    try:
+        children = Path(f"/proc/{os.getpid()}/task/{os.getpid()}/children").read_text()
+        return len(children.split()) if children.strip() else 0
+    except (OSError, FileNotFoundError):
+        try:
+            result = subprocess.run(
+                ["pgrep", "-P", str(os.getpid())],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            return len([l for l in result.stdout.split("\n") if l])
+        except (OSError, subprocess.SubprocessError):
+            return 0
+
+
+class ResourceWatcher:
+
+    def __init__(
+        self,
+        memory: bool = True,
+        fds: bool = True,
+        threads: bool = True,
+        children: bool = True,
+        sample_interval: float = 0.1,
+    ) -> None:
+        self.memory = memory
+        self.fds = fds
+        self.threads = threads
+        self.children = children
+        self.sample_interval_ms = int(sample_interval * 1000)
+
+        # State set by __enter__
+        self._snapshot_before: ResourceSnapshot | None = None
+        self._fds_before: list[str] = []
+        self._threads_before: list[str] = []
+        self._children_before: int = 0
+        self._enter_time_ns: int = 0
+        self._sampler: BackgroundSampler | None = None
+
+        self.result: ResourceDelta | None = None
+        self._running: bool = False
+
+    def __enter__(self) -> Self:
+        if self.memory or self.fds:
+            self._snapshot_before = snapshot_resources()
+
+        if self.fds:
+            self._fds_before = list_open_fds()
+
+        if self.threads:
+            self._threads_before = [t.name for t in threading.enumerate()]
+
+        if self.children:
+            self._children_before = _count_children()
+
+        self._enter_time_ns = time.monotonic_ns()
+
+        if self.memory:
+            self._sampler = BackgroundSampler()
+            self._sampler.start(self.sample_interval_ms)
+
+        self._running = True
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> bool:
+        exit_time_ns = time.monotonic_ns()
+        self._running = False
+
+        peak_rss = 0
+        if self._sampler is not None:
+            peak_rss = self._sampler.stop()
+            self._sampler = None
+
+        snapshot_after = snapshot_resources() if (self.memory or self.fds) else None
+        if snapshot_after is not None and snapshot_after.rss_bytes > peak_rss:
+            peak_rss = snapshot_after.rss_bytes
+        fds_after = list_open_fds() if self.fds else []
+        threads_after_names = (
+            [t.name for t in threading.enumerate()] if self.threads else []
+        )
+        children_after = _count_children() if self.children else self._children_before
+
+        before = self._snapshot_before
+
+        rss_delta = (
+            (snapshot_after.rss_bytes - before.rss_bytes)
+            if (snapshot_after and before)
+            else 0
+        )
+        vms_delta = (
+            (snapshot_after.vms_bytes - before.vms_bytes)
+            if (snapshot_after and before)
+            else 0
+        )
+        fd_delta = (
+            (snapshot_after.open_fds - before.open_fds)
+            if (snapshot_after and before)
+            else 0
+        )
+
+        fds_before_set = set(self._fds_before)
+        fds_after_set = set(fds_after)
+        leaked_fds = sorted(fds_after_set - fds_before_set)
+
+        threads_before_set = set(self._threads_before)
+        new_thread_names = [
+            n for n in threads_after_names if n not in threads_before_set
+        ]
+
+        thread_delta = len(threads_after_names) - len(self._threads_before)
+        child_delta = children_after - self._children_before
+        elapsed_ns = exit_time_ns - self._enter_time_ns
+
+        self.result = ResourceDelta(
+            rss_delta_bytes=rss_delta,
+            vms_delta_bytes=vms_delta,
+            fd_delta=fd_delta,
+            peak_rss_bytes=peak_rss,
+            thread_delta=thread_delta,
+            child_delta=child_delta,
+            elapsed_ns=elapsed_ns,
+            leaked_fds=leaked_fds,
+            new_thread_names=new_thread_names,
+        )
+
+        return False
+
+    def __repr__(self) -> str:
+        state = "running" if self._running else "done"
+        if self.result:
+            return (
+                f"ResourceWatcher({state}, rss_delta={self.result.rss_delta_mb:.1f}MB)"
+            )
+        return f"ResourceWatcher({state})"
+
+
+def watch(
+    memory: bool = True,
+    fds: bool = True,
+    threads: bool = True,
+    children: bool = True,
+    sample_interval: float = 0.1,
+) -> ResourceWatcher:
+    return ResourceWatcher(
+        memory=memory,
+        fds=fds,
+        threads=threads,
+        children=children,
+        sample_interval=sample_interval,
+    )

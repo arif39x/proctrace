@@ -2,8 +2,10 @@ use pyo3::prelude::*;
 
 mod error;
 mod resources;
+mod sampler;
 
 use resources::ResourceSnapshot;
+use sampler::BackgroundSampler;
 
 #[pyfunction]
 fn probe_version() -> &'static str {
@@ -26,5 +28,6 @@ fn _proctrace_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(snapshot_resources, m)?)?;
     m.add_function(wrap_pyfunction!(list_open_fds, m)?)?;
     m.add_class::<ResourceSnapshot>()?;
+    m.add_class::<BackgroundSampler>()?;
     Ok(())
 }
