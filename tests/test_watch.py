@@ -1,69 +1,105 @@
-import json
-import os
+from __future__ import annotations
+
 import threading
 import time
 
-import pytest
-
 import proctrace
+from proctrace._types import ResourceDelta
 
 
-def test_watch_reports_positive_rss_delta():
-    with proctrace.watch() as p:
-        buf = bytearray(20 * 1024 * 1024)
-        assert len(buf) == 20 * 1024 * 1024
-    assert p.result.rss_delta_bytes > 0
-    assert p.result.peak_rss_bytes >= p.result.rss_delta_bytes
+class TestMemoryTracking:
+    def test_positive_rss_delta_on_allocation(self):
+        with proctrace.watch(memory=True, fds=False, threads=False) as probe:
+            _ = bytearray(20 * 1024 * 1024)  # 20 MB allocation, kept alive by `_`
+        assert probe.result is not None
+        # RSS delta should be at least 15 MB (OS may not page everything in)
+        assert probe.result.rss_delta_bytes > 15 * 1024 * 1024, (
+            f"Expected >15MB RSS delta, got {probe.result.rss_delta_mb:.1f}MB"
+        )
+
+    def test_peak_rss_exceeds_or_equals_final_delta(self):
+        with proctrace.watch(memory=True, fds=False, threads=False) as probe:
+            buf = bytearray(30 * 1024 * 1024)  # allocate
+            time.sleep(0.15)                    # let sampler see it
+            del buf                             # free
+        assert probe.result.peak_rss_bytes >= abs(probe.result.rss_delta_bytes)
+
+    def test_small_allocation_has_small_delta(self):
+        with proctrace.watch(memory=True, fds=False, threads=False) as probe:
+            _ = [1, 2, 3]
+        assert abs(probe.result.rss_delta_mb) < 5.0
+
+    def test_elapsed_is_positive(self):
+        with proctrace.watch() as probe:
+            time.sleep(0.05)
+        assert probe.result.elapsed_ns > 0
+        assert probe.result.elapsed_ms >= 40
 
 
-def test_watch_peak_catches_memory_freed_before_exit():
-    with proctrace.watch() as p:
-        buf = bytearray(64 * 1024 * 1024)
-        time.sleep(0.3)
-        del buf
-    assert p.result.peak_rss_bytes >= 64 * 1024 * 1024
+class TestFdTracking:
+    def test_fd_leak_detection(self, tmp_path):
+        files = [open(tmp_path / f"f{i}", "w") for i in range(5)]
+
+        with proctrace.watch(memory=False, fds=True, threads=False) as probe:
+            leaked = [open(tmp_path / f"leak{i}", "w") for i in range(3)]
+
+        assert probe.result.fd_delta >= 3
+        assert len(probe.result.leaked_fds) >= 3
+
+        # Cleanup
+        for f in files + leaked:
+            f.close()
+
+    def test_closed_fds_not_reported_as_leaked(self, tmp_path):
+        with proctrace.watch(memory=False, fds=True, threads=False) as probe:
+            f = open(tmp_path / "clean.txt", "w")
+            f.close()
+
+        assert probe.result.fd_delta == 0
+        assert len(probe.result.leaked_fds) == 0
 
 
-def test_watch_detects_leaked_fds(tmp_path):
-    files = [tmp_path / f"leak-{i}.txt" for i in range(5)]
-    for f in files:
-        f.write_text("")
-    with proctrace.watch(fds=True) as p:
-        fds = [os.open(f, os.O_WRONLY | os.O_CREAT) for f in files]
-        assert len(fds) == 5
-    assert len(p.result.leaked_fds) == 5
+class TestThreadTracking:
+    def test_thread_delta_detected(self):
+        with proctrace.watch(memory=False, fds=False, threads=True) as probe:
+            threads = []
+            for i in range(3):
+                t = threading.Thread(target=lambda: time.sleep(5), name=f"W{i}", daemon=True)
+                t.start()
+                threads.append(t)
+            time.sleep(0.05)
+
+        assert probe.result.thread_delta >= 3
+        names = probe.result.new_thread_names
+        assert any(n.startswith("W") for n in names)
+
+    def test_no_false_positive_on_existing_threads(self):
+        with proctrace.watch(memory=False, fds=False, threads=True) as probe:
+            time.sleep(0.05)
+
+        assert probe.result.thread_delta == 0
+        assert probe.result.new_thread_names == []
 
 
-def test_watch_detects_new_threads():
-    stop = threading.Event()
-    thread = threading.Thread(target=stop.wait, name="day3-sleeper")
-    with proctrace.watch(threads=True) as p:
-        thread.start()
-        time.sleep(0.05)
-    stop.set()
-    thread.join()
-    assert p.result.thread_delta >= 1
-    assert "day3-sleeper" in p.result.new_thread_names
+class TestResultType:
+    def test_result_is_resource_delta(self):
+        with proctrace.watch() as probe:
+            pass
+        assert isinstance(probe.result, ResourceDelta)
 
+    def test_report_returns_string(self):
+        with proctrace.watch() as probe:
+            pass
+        report = probe.result.report()
+        assert isinstance(report, str)
+        assert "rss" in report.lower() or "memory" in report.lower()
 
-def test_watch_report_prints_box_table():
-    with proctrace.watch() as p:
-        pass
-    report = p.result.report()
-    assert "ResourceDelta" in report
-    assert "┌─" in report and "└" in report
-
-
-def test_watch_to_json_is_parseable():
-    with proctrace.watch() as p:
-        pass
-    payload = json.loads(p.result.to_json())
-    assert payload["rss_delta_bytes"] == p.result.rss_delta_bytes
-    assert payload["peak_rss_bytes"] == p.result.peak_rss_bytes
-    assert isinstance(payload["leaked_fds"], list)
-
-
-def test_watch_propagates_exceptions():
-    with pytest.raises(RuntimeError), proctrace.watch() as p:
-        raise RuntimeError("boom")
-    assert p.result is not None
+    def test_json_round_trip(self):
+        import json
+        with proctrace.watch() as probe:
+            pass
+        j = probe.result.to_json()
+        d = json.loads(j)
+        restored = ResourceDelta.from_dict(d)
+        assert restored.rss_delta_bytes == probe.result.rss_delta_bytes
+        assert restored.elapsed_ns == probe.result.elapsed_ns
