@@ -9,7 +9,7 @@ description = "Non-invasive process and OS state introspection for Python develo
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-# CRITICAL: no runtime dependencies. If you add one, you've broken the design.
+# No runtime dependencies by design: the core is a compiled Rust extension.
 dependencies = []
 
 [project.optional-dependencies]
@@ -21,15 +21,11 @@ dev = [
 ]
 
 [tool.maturin]
-# module-name: the Python import path for the compiled extension.
-# Must match the #[pymodule] name in lib.rs AND the package path.
+# Must match the #[pymodule] name in lib.rs and the package path.
 module-name = "proctrace._proctrace_core"
-# python-packages: tells maturin to also install the proctrace/ Python package.
-# Without this, only the .so is installed, not the Python wrapper.
+# Install the Python wrapper alongside the compiled extension.
 python-packages = ["proctrace"]
-# Required: tells PyO3 it's an extension module (not embedding Python in Rust)
 features = ["pyo3/extension-module"]
-# Strip debug symbols from release builds for smaller .so
 strip = true
 
 [tool.pytest.ini_options]
