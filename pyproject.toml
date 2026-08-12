@@ -1,0 +1,37 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "proctrace"
+version = "0.1.0"
+description = "Non-invasive process and OS state introspection for Python developers"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+# CRITICAL: no runtime dependencies. If you add one, you've broken the design.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "maturin>=1.5",
+    "twine>=5.0",
+]
+
+[tool.maturin]
+# module-name: the Python import path for the compiled extension.
+# Must match the #[pymodule] name in lib.rs AND the package path.
+module-name = "proctrace._proctrace_core"
+# python-packages: tells maturin to also install the proctrace/ Python package.
+# Without this, only the .so is installed, not the Python wrapper.
+python-packages = ["proctrace"]
+# Required: tells PyO3 it's an extension module (not embedding Python in Rust)
+features = ["pyo3/extension-module"]
+# Strip debug symbols from release builds for smaller .so
+strip = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

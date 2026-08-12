@@ -1,0 +1,20 @@
+[package]
+name = "proctracecore"
+version = "0.1.0"
+edition = "2021"
+authors = ["arif39x,aliarif1168@gmail.com"]
+description = "Rust core for proctrace process introspection library"
+license = "MIT"
+
+# cdylib 
+[lib]
+name = "_proctrace_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.29", features = ["extension-module"] }
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1

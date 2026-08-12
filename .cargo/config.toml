@@ -1,0 +1,9 @@
+[build]
+# On macOS, the linker needs this to correctly set the install name of the .dylib
+# so Python can find it regardless of where the venv is installed.
+# On Linux this has no effect.
+[target.x86_64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]
+
+[target.aarch64-apple-darwin]
+rustflags = ["-C", "link-arg=-undefined", "-C", "link-arg=dynamic_lookup"]

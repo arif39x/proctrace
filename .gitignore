@@ -1,0 +1,34 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# maturin build output
+*.so
+*.pyd
+*.dylib
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+/research-doc
+
+# proctrace runtime files
+proctrace.log
+/tmp/proctrace-*.pipe
+
+# macOS
+.DS_Store
