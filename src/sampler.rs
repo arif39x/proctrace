@@ -1,10 +1,3 @@
-//! Background memory sampler.
-//!
-//! Spawns a native OS thread (not a Python thread) that polls RSS every
-//! interval_ms milliseconds and stores the peak in an AtomicU64.
-//!
-//! SAFETY: the Rust thread never touches a Python object; it only reads
-//! /proc/self/status and writes to an AtomicU64, so it can run without the GIL.
 use crate::resources::snapshot;
 use pyo3::prelude::*;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 mod error;
 mod resources;
 mod sampler;
+mod signal;
 
 use resources::ResourceSnapshot;
 use sampler::BackgroundSampler;
@@ -22,11 +23,17 @@ fn list_open_fds() -> PyResult<Vec<String>> {
     resources::list_fd_paths().map_err(Into::into)
 }
 
+#[pyfunction]
+fn register_signal_pipe(signal_num: i32) -> PyResult<(i32, i32)> {
+    signal::register_signal_pipe(signal_num)
+}
+
 #[pymodule]
 fn _proctrace_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(probe_version, m)?)?;
     m.add_function(wrap_pyfunction!(snapshot_resources, m)?)?;
     m.add_function(wrap_pyfunction!(list_open_fds, m)?)?;
+    m.add_function(wrap_pyfunction!(register_signal_pipe, m)?)?;
     m.add_class::<ResourceSnapshot>()?;
     m.add_class::<BackgroundSampler>()?;
     Ok(())
