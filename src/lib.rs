@@ -1,10 +1,12 @@
 use pyo3::prelude::*;
 
 mod error;
+mod ipc_probe;
 mod resources;
 mod sampler;
 mod signal;
 
+use ipc_probe::IpcStats;
 use resources::ResourceSnapshot;
 use sampler::BackgroundSampler;
 
@@ -36,5 +38,6 @@ fn _proctrace_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(register_signal_pipe, m)?)?;
     m.add_class::<ResourceSnapshot>()?;
     m.add_class::<BackgroundSampler>()?;
+    m.add_class::<IpcStats>()?;
     Ok(())
 }
