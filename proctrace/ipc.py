@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import fcntl
 import os
+import socket as _socket
+import struct
 import time
-from typing import Any
+from typing import Any, Self
 
 from proctrace._proctrace_core import IpcStats
 
-_registry: list[IpcStats] = []
+_registry: list[Any] = []
 
 
-def _register(stats: IpcStats) -> IpcStats:
+def _register(stats: Any) -> Any:
     _registry.append(stats)
     return stats
 
@@ -18,6 +21,7 @@ def ipc_report() -> str:
     if not _registry:
         return "(no IPC channels traced)"
     return "\n".join(s.report() for s in _registry)
+
 
 class TracedQueue:
     __slots__ = ("_q", "_stats", "_put_times")
@@ -97,6 +101,56 @@ class TracedPipe:
         return self._stats
 
 
+class TracedSocket:
+    __slots__ = ("_sock", "_stats")
+
+    def __init__(self, sock: _socket.socket, stats: Any) -> None:
+        self._sock = sock
+        self._stats = stats
+
+    def sendall(self, data: bytes, flags: int = 0) -> None:
+        t0 = time.monotonic_ns()
+        self._sock.sendall(data, flags)
+        latency_us = (time.monotonic_ns() - t0) // 1000
+        self._stats.record_send(len(data), latency_us)
+
+    def send(self, data: bytes, flags: int = 0) -> int:
+        t0 = time.monotonic_ns()
+        n = self._sock.send(data, flags)
+        latency_us = (time.monotonic_ns() - t0) // 1000
+        self._stats.record_send(n, latency_us)
+        return n
+
+    def recv(self, bufsize: int, flags: int = 0) -> bytes:
+        # Query how many bytes are in the kernel receive buffer BEFORE recv
+        try:
+            FIONREAD = 0x541B  # Linux ioctl constant
+            buf = struct.pack("I", 0)
+            result = fcntl.ioctl(self._sock.fileno(), FIONREAD, buf)
+            waiting = struct.unpack("I", result)[0]
+            # Calculate utilization: what fraction of bufsize is already waiting
+            pct = min(100, int(waiting * 100 / bufsize)) if bufsize > 0 else 0
+        except OSError:
+            pct = 0
+
+        data = self._sock.recv(bufsize, flags)
+        self._stats.record_recv(len(data), pct)
+        return data
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_) -> bool:
+        return False  # never suppress exceptions
+
+    @property
+    def stats(self) -> Any:
+        return self._stats
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._sock, name)
+
+
 def trace_ipc(queue: Any, name: str = "", ring_capacity: int = 1024) -> TracedQueue:
     channel_name = name or repr(queue)[:40]
     stats = IpcStats(channel_name, ring_capacity)
@@ -110,8 +164,20 @@ def trace_pipe(
     name: str = "",
     ring_capacity: int = 1024,
 ) -> TracedPipe:
-
     channel_name = name or f"pipe({read_fd},{write_fd})"
     stats = IpcStats(channel_name, ring_capacity)
     _register(stats)
     return TracedPipe(read_fd, write_fd, stats)
+
+
+def trace_socket(
+    sock: _socket.socket,
+    name: str = "",
+    ring_capacity: int = 1024,
+) -> TracedSocket:
+
+    from proctrace._proctrace_core import SocketStats
+    channel_name = name or f"socket({sock.fileno()})"
+    stats = SocketStats(channel_name, ring_capacity)
+    _register(stats)
+    return TracedSocket(sock, stats)

@@ -6,7 +6,7 @@ mod resources;
 mod sampler;
 mod signal;
 
-use ipc_probe::IpcStats;
+use ipc_probe::{IpcStats, SocketStats};
 use resources::ResourceSnapshot;
 use sampler::BackgroundSampler;
 
@@ -39,5 +39,6 @@ fn _proctrace_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ResourceSnapshot>()?;
     m.add_class::<BackgroundSampler>()?;
     m.add_class::<IpcStats>()?;
+    m.add_class::<SocketStats>()?;
     Ok(())
 }

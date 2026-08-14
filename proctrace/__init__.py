@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from proctrace._proctrace_core import probe_version as _probe_version
 from proctrace._types import ResourceDelta
-from proctrace.ipc import ipc_report, trace_ipc, trace_pipe
+from proctrace.ipc import ipc_report, trace_ipc, trace_pipe, trace_socket
 from proctrace.snapshot import install_signal_handler
 from proctrace.watch import ResourceWatcher, watch
 
@@ -16,5 +16,6 @@ __all__ = [
     "install_signal_handler",
     "trace_ipc",
     "trace_pipe",
+    "trace_socket",
     "ipc_report",
 ]
