@@ -5,12 +5,14 @@ build-backend = "maturin"
 [project]
 name = "proctrace"
 version = "0.1.0"
-description = "Non-invasive process and OS state introspection for Python developers"
+description = "Process introspection for humans."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
-# No runtime dependencies by design: the core is a compiled Rust extension.
 dependencies = []
+
+[project.scripts]
+proctrace = "proctrace.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -21,9 +23,7 @@ dev = [
 ]
 
 [tool.maturin]
-# Must match the #[pymodule] name in lib.rs and the package path.
 module-name = "proctrace._proctrace_core"
-# Install the Python wrapper alongside the compiled extension.
 python-packages = ["proctrace"]
 features = ["pyo3/extension-module"]
 strip = true

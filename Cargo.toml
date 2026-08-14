@@ -3,7 +3,7 @@ name = "tap"
 version = "0.1.0"
 edition = "2021"
 authors = ["arif39x,aliarif1168@gmail.com"]
-description = "lowlevel Rust primitives for peeking into running processes without breaking anythings"
+description = "Process introspection for humans."
 license = "MIT"
 
 [lib]

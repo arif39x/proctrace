@@ -90,14 +90,12 @@ class ResourceDelta:
             thread_str += f" (new: {', '.join(self.new_thread_names[:3])})"
 
         lines = [
-            "┌─ proctrace ResourceDelta " + "─" * 30 + "┐",
-            f"│  memory rss      {mem_str:<30}│",
-            f"│  memory peak     {fmt_bytes(self.peak_rss_bytes):<30}│",
-            f"│  virtual mem     {fmt_bytes(self.vms_delta_bytes):<30}│",
-            f"│  open fds        {fd_str:<30}│" + leaked_str,
-            f"│  threads         {thread_str:<30}│",
-            f"│  child procs     {fmt_count(self.child_delta):<30}│",
-            f"│  elapsed         {self.elapsed_ms:.1f} ms{'':<24}│",
-            "└" + "─" * 56 + "┘",
+            f"  memory rss      {mem_str}",
+            f"  memory peak     {fmt_bytes(self.peak_rss_bytes)}",
+            f"  virtual mem     {fmt_bytes(self.vms_delta_bytes)}",
+            f"  open fds        {fd_str}" + leaked_str,
+            f"  threads         {thread_str}",
+            f"  child procs     {fmt_count(self.child_delta)}",
+            f"  elapsed         {self.elapsed_ms:.1f} ms",
         ]
         return "\n".join(lines)
