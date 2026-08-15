@@ -11,22 +11,40 @@ extern "C" fn handle_signal(_signum: libc::c_int) {      //c signale handler
         }
     }
 }
-#[pyfunction]
-pub fn register_signal_pipe(signal_num: i32) -> PyResult<(i32, i32)> {
-    // Create a non-blocking pipe with O_CLOEXEC so child processes don't inherit it
-    let mut fds = [0i32; 2];       //need to creatte a non-blocking pipe and with 0_CLOEXEC so child dont heritate
+fn create_nonblocking_pipe() -> std::io::Result<(i32, i32)> {
+    let mut fds = [0i32; 2];
+
+    #[cfg(target_os = "linux")]
     let ret = unsafe {
-        libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC)   // fds is a valid 2-element array & pipe2 is a standard Linux syscall
+        libc::pipe2(fds.as_mut_ptr(), libc::O_NONBLOCK | libc::O_CLOEXEC)
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let ret = {
+        // macOS/BSD lack pipe2: create a plain pipe and set the flags with fcntl
+        let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
+        if ret == 0 {
+            for fd in &fds {
+                unsafe {
+                    libc::fcntl(*fd, libc::F_SETFL, libc::O_NONBLOCK);
+                    libc::fcntl(*fd, libc::F_SETFD, libc::FD_CLOEXEC);
+                }
+            }
+        }
+        ret
     };
 
     if ret != 0 {
-        return Err(pyo3::exceptions::PyOSError::new_err(
-            format!("pipe2 failed: {}", std::io::Error::last_os_error())
-        ));
+        return Err(std::io::Error::last_os_error());
     }
+    Ok((fds[0], fds[1]))
+}
 
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+#[pyfunction]
+pub fn register_signal_pipe(signal_num: i32) -> PyResult<(i32, i32)> {
+    let (read_fd, write_fd) = create_nonblocking_pipe().map_err(|e| {
+        pyo3::exceptions::PyOSError::new_err(format!("pipe failed: {e}"))
+    })?;
 
     // Store write_fd in the static so the signal handler can use it
     PIPE_WRITE_FD.store(write_fd, std::sync::atomic::Ordering::SeqCst);

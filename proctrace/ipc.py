@@ -5,7 +5,10 @@ import os
 import socket as _socket
 import struct
 import time
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from typing import Self
 
 from proctrace._proctrace_core import IpcStats
 
