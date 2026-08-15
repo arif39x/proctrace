@@ -44,23 +44,33 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.toml') }}
 
-      - name: Install Python build tools
-        run: pip install maturin>=1.5 pytest>=8 pytest-asyncio twine
+      - name: Create virtual environment
+        run: python -m venv .venv
 
-      - name: Build and install (maturin develop)
-        run: maturin develop --release
+      - name: Install Python build tools
+        run: |
+          source .venv/bin/activate
+          pip install maturin>=1.5 pytest>=8 pytest-asyncio twine
 
       - name: Install package in editable mode
-        run: pip install -e ".[dev]"
+        run: |
+          source .venv/bin/activate
+          pip install -e ".[dev]"
 
       - name: Run Clippy (Rust linter)
         run: cargo clippy -- -D warnings
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: |
+          source .venv/bin/activate
+          pytest tests/ -v --tb=short
 
       - name: Build release wheel
-        run: maturin build --release
+        run: |
+          source .venv/bin/activate
+          maturin build --release
 
       - name: Check wheel
-        run: python -m twine check target/wheels/*.whl
+        run: |
+          source .venv/bin/activate
+          python -m twine check target/wheels/*.whl
