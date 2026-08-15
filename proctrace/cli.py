@@ -99,9 +99,11 @@ def cmd_watch(args: argparse.Namespace) -> int:
 
 
 def _read_proc_mem(pid: int) -> tuple[float, float]:
-    try:
-        # Linux
-        status = open(f"/proc/{pid}/status").read()
+    if sys.platform == "linux":
+        try:
+            status = open(f"/proc/{pid}/status").read()
+        except FileNotFoundError:
+            raise ProcessLookupError(pid)
         rss_kb = vms_kb = 0
         for line in status.splitlines():
             if line.startswith("VmRSS:"):
@@ -109,20 +111,18 @@ def _read_proc_mem(pid: int) -> tuple[float, float]:
             elif line.startswith("VmSize:"):
                 vms_kb = int(line.split()[1])
         return rss_kb / 1024, vms_kb / 1024
-    except FileNotFoundError:
+
+    # No /proc on macOS/BSD: ps reports RSS and VSZ in KB
+    result = subprocess.run(
+        ["ps", "-p", str(pid), "-o", "rss=,vsz="],
+        capture_output=True, text=True, check=False,
+    )
+    if result.returncode != 0:
         raise ProcessLookupError(pid)
-    except OSError:
-        # macOS
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "rss=,vsz="],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            raise ProcessLookupError(pid)
-        parts = result.stdout.strip().split()
-        if len(parts) >= 2:
-            return int(parts[0]) / 1024, int(parts[1]) / 1024
+    parts = result.stdout.strip().split()
+    if len(parts) < 2:
         raise ProcessLookupError(pid)
+    return int(parts[0]) / 1024, int(parts[1]) / 1024
 
 
 def cmd_guide(args: argparse.Namespace) -> int:

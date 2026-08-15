@@ -2,6 +2,46 @@ use crate::error::ProctraceError;
 use crate::resources::now_ns;
 use crate::resources::ResourceSnapshot;
 
+fn count_open_fds() -> Result<u32, ProctraceError> {
+    // proc_pidinfo(PROC_PIDLISTFDS) rejects a NULL buffer, so query with a
+    // real buffer and grow it by doubling on ENOMEM until the table fits.
+    let entry_size = std::mem::size_of::<libc::proc_fdinfo>() as i32;
+    let mut buf: Vec<libc::proc_fdinfo> = Vec::new();
+    let mut capacity: i32 = 256;
+    loop {
+        buf.resize(capacity as usize, unsafe { std::mem::zeroed() });
+        let ret = unsafe {
+            // SAFETY: `buf` holds `capacity` zero-initialized proc_fdinfo
+            // entries and `capacity * entry_size` bytes are handed to the
+            // kernel, which fills the leading live entries.
+            libc::proc_pidinfo(
+                libc::getpid(),
+                libc::PROC_PIDLISTFDS,
+                0,
+                buf.as_mut_ptr().cast::<libc::c_void>(),
+                capacity * entry_size,
+            )
+        };
+        if ret > 0 {
+            return Ok((ret / entry_size) as u32);
+        }
+        let err = std::io::Error::last_os_error();
+        if err.raw_os_error() != Some(libc::ENOMEM) {
+            return Err(ProctraceError::MacosSyscall {
+                call: "PROC_PIDLISTFDS",
+                source: err,
+            });
+        }
+        capacity = capacity.saturating_mul(2);
+        if capacity > 65536 {
+            return Err(ProctraceError::MacosSyscall {
+                call: "PROC_PIDLISTFDS",
+                source: std::io::Error::from_raw_os_error(libc::E2BIG),
+            });
+        }
+    }
+}
+
 pub fn snapshot() -> Result<ResourceSnapshot, ProctraceError> {
     let mut info: libc::proc_taskinfo = unsafe { std::mem::zeroed() };
     let ret = unsafe {
@@ -22,22 +62,7 @@ pub fn snapshot() -> Result<ResourceSnapshot, ProctraceError> {
         });
     }
 
-    let size = unsafe {
-        // SAFETY: a null buffer with zero length is the documented way to
-        // query the fd table size; proc_pidinfo does not write in that case.
-        libc::proc_pidinfo(
-            libc::getpid(),
-            libc::PROC_PIDLISTFDS,
-            0,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    let fd_count = if size > 0 {
-        size as u32 / std::mem::size_of::<libc::proc_fdinfo>() as u32
-    } else {
-        0
-    };
+    let fd_count = count_open_fds()?;
 
     Ok(ResourceSnapshot {
         rss_bytes: info.pti_resident_size,
