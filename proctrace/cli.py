@@ -125,6 +125,12 @@ def _read_proc_mem(pid: int) -> tuple[float, float]:
         raise ProcessLookupError(pid)
 
 
+def cmd_guide(args: argparse.Namespace) -> int:
+    import proctrace
+    proctrace.help()
+    return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="proctrace",
@@ -142,6 +148,8 @@ def main() -> None:
     dump_p.add_argument("--pid", type=int, required=True)
     dump_p.add_argument("--signal", default="SIGUSR1", choices=["SIGUSR1", "SIGUSR2"])
 
+    guide_p = subparsers.add_parser("guide", help="Print the developer guide")
+
     watch_p = subparsers.add_parser("watch", help="Live-poll a process's memory")
     watch_p.add_argument("--pid", type=int, required=True)
     watch_p.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds")
@@ -152,7 +160,7 @@ def main() -> None:
     if args.subcommand == "run" and args.command and args.command[0] == "--":
         args.command = args.command[1:]
 
-    dispatch = {"run": cmd_run, "dump": cmd_dump, "watch": cmd_watch}
+    dispatch = {"run": cmd_run, "dump": cmd_dump, "watch": cmd_watch, "guide": cmd_guide}
     sys.exit(dispatch[args.subcommand](args))
 
 

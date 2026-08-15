@@ -3,6 +3,8 @@ from __future__ import annotations
 import threading
 import time
 
+from conftest import allocate_dirty_mb
+
 import proctrace
 from proctrace._types import ResourceDelta
 
@@ -10,7 +12,7 @@ from proctrace._types import ResourceDelta
 class TestMemoryTracking:
     def test_positive_rss_delta_on_allocation(self):
         with proctrace.watch(memory=True, fds=False, threads=False) as probe:
-            _ = bytearray(20 * 1024 * 1024)  # 20 MB allocation, kept alive by `_`
+            _ = allocate_dirty_mb(20)  # 20 MB allocation, kept alive by `_`
         assert probe.result is not None
         # RSS delta should be at least 15 MB (OS may not page everything in)
         assert probe.result.rss_delta_bytes > 15 * 1024 * 1024, (
@@ -19,9 +21,9 @@ class TestMemoryTracking:
 
     def test_peak_rss_exceeds_or_equals_final_delta(self):
         with proctrace.watch(memory=True, fds=False, threads=False) as probe:
-            buf = bytearray(30 * 1024 * 1024)  # allocate
-            time.sleep(0.15)                    # let sampler see it
-            del buf                             # free
+            buf = allocate_dirty_mb(30)  # allocate
+            time.sleep(0.15)  # let sampler see it
+            del buf  # free
         assert probe.result.peak_rss_bytes >= abs(probe.result.rss_delta_bytes)
 
     def test_small_allocation_has_small_delta(self):
@@ -64,7 +66,9 @@ class TestThreadTracking:
         with proctrace.watch(memory=False, fds=False, threads=True) as probe:
             threads = []
             for i in range(3):
-                t = threading.Thread(target=lambda: time.sleep(5), name=f"W{i}", daemon=True)
+                t = threading.Thread(
+                    target=lambda: time.sleep(5), name=f"W{i}", daemon=True
+                )
                 t.start()
                 threads.append(t)
             time.sleep(0.05)
@@ -96,6 +100,7 @@ class TestResultType:
 
     def test_json_round_trip(self):
         import json
+
         with proctrace.watch() as probe:
             pass
         j = probe.result.to_json()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import mmap
 import os
 import tempfile
 import threading
@@ -8,18 +9,22 @@ from collections.abc import Generator
 
 import pytest
 
+pytest_plugins = ["pytester"]
 
-@pytest.fixture
-def allocate_mb():
-    allocated = []
 
-    def _allocate(n: int) -> bytearray:
-        buf = bytearray(n * 1024 * 1024)
-        allocated.append(buf)
-        return buf
+def allocate_dirty_mb(n: int) -> mmap.mmap:
+    """Allocate n MB of anonymous memory and touch every page.
 
-    yield _allocate
-    allocated.clear()
+    Uses mmap directly instead of bytearray: glibc serves freed bytearray
+    chunks from a resident cache, so process-RSS deltas are order-dependent
+    and tests flake depending on what ran before. A fresh mmap always faults
+    in new pages, keeping RSS deltas deterministic.
+    """
+    total = n * 1024 * 1024
+    region = mmap.mmap(-1, total)
+    for i in range(0, total, 4096):
+        region[i] = 1
+    return region
 
 
 @pytest.fixture

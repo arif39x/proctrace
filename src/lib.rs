@@ -1,10 +1,12 @@
 use pyo3::prelude::*;
 
+#[cfg(unix)]
+mod signal;
+
 mod error;
 mod ipc_probe;
 mod resources;
 mod sampler;
-mod signal;
 
 use ipc_probe::{IpcStats, SocketStats};
 use resources::ResourceSnapshot;
@@ -25,6 +27,7 @@ fn list_open_fds() -> PyResult<Vec<String>> {
     resources::list_fd_paths().map_err(Into::into)
 }
 
+#[cfg(unix)]
 #[pyfunction]
 fn register_signal_pipe(signal_num: i32) -> PyResult<(i32, i32)> {
     signal::register_signal_pipe(signal_num)
@@ -35,6 +38,7 @@ fn _proctrace_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(probe_version, m)?)?;
     m.add_function(wrap_pyfunction!(snapshot_resources, m)?)?;
     m.add_function(wrap_pyfunction!(list_open_fds, m)?)?;
+    #[cfg(unix)]
     m.add_function(wrap_pyfunction!(register_signal_pipe, m)?)?;
     m.add_class::<ResourceSnapshot>()?;
     m.add_class::<BackgroundSampler>()?;

@@ -4,6 +4,7 @@ import os
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
     from typing import Self
 
 
-def _count_children() -> int:         # child process counting
+def _count_children() -> int:  # child process counting
     try:
         children = Path(f"/proc/{os.getpid()}/task/{os.getpid()}/children").read_text()
         return len(children.split()) if children.strip() else 0
@@ -38,7 +39,6 @@ def _count_children() -> int:         # child process counting
 
 
 class ResourceWatcher:
-
     def __init__(
         self,
         memory: bool = True,
@@ -62,6 +62,7 @@ class ResourceWatcher:
         self._sampler: BackgroundSampler | None = None
 
         self.result: ResourceDelta | None = None
+        self.on_exit: Callable[[ResourceDelta], None] | None = None
         self._running: bool = False
 
     def __enter__(self) -> Self:
@@ -151,6 +152,9 @@ class ResourceWatcher:
             leaked_fds=leaked_fds,
             new_thread_names=new_thread_names,
         )
+
+        if self.on_exit is not None:
+            self.on_exit(self.result)
 
         return False
 

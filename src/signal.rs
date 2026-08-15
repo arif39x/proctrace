@@ -32,7 +32,7 @@ pub fn register_signal_pipe(signal_num: i32) -> PyResult<(i32, i32)> {
     PIPE_WRITE_FD.store(write_fd, std::sync::atomic::Ordering::SeqCst);
 
     let action = libc::sigaction {                  //C handler for the given signal
-        sa_sigaction: handle_signal as libc::sighandler_t,
+        sa_sigaction: handle_signal as *const () as libc::sighandler_t,
         sa_mask: unsafe { std::mem::zeroed() },
         sa_flags: libc::SA_RESTART, // restart syscalls interrupted by the signal
         #[cfg(target_os = "linux")]
